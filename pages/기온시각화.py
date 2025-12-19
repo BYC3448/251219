@@ -1,73 +1,73 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 
-# 웹앱 제목 및 설명 설정
-st.title('지난 110년간의 기온 변화 분석')
-st.write('업로드된 기온 데이터를 분석하여 온난화 경향을 확인합니다.')
+# 페이지 설정
+st.set_page_config(page_title="기온 상승 분석기", layout="wide")
 
-# 데이터 로드 함수
+# 1. 데이터 로드 및 전처리 함수
 @st.cache_data
 def load_data():
-    # csv 파일 읽기 (한글 윈도우에서 작성된 파일일 경우를 대비해 인코딩 처리)
-    try:
-        df = pd.read_csv('temp.csv', encoding='utf-8')
-    except UnicodeDecodeError:
-        df = pd.read_csv('temp.csv', encoding='cp949')
+    # 데이터 읽기
+    df = pd.read_csv('test.csv')
     
-    # 날짜 컬럼의 공백 및 특수문자 제거 (데이터 전처리)
-    df['날짜'] = df['날짜'].astype(str).str.strip()
+    # '날짜' 컬럼의 탭(\t) 기호 제거 및 데이트타임 변환
+    df['날짜'] = df['날짜'].astype(str).str.replace('\t', '').str.strip()
+    df['날짜'] = pd.to_datetime(df['날짜'])
     
-    # 날짜를 datetime 형식으로 변환
-    df['날짜'] = pd.to_datetime(df['날짜'], errors='coerce')
+    # '연도' 컬럼 추출
+    df['연도'] = df['날짜'].dt.year
     
-    # 기온 데이터가 없는 행 제거
-    df = df.dropna(subset=['평균기온(℃)'])
-    
-    # 연도 컬럼 추가
-    df['Year'] = df['날짜'].dt.year
+    # 분석에 필요한 컬럼만 선택하고 결측치 제거
+    df = df[['연도', '평균기온(℃)']].dropna()
     return df
 
-# 데이터 불러오기
+# 앱 UI 시작
+st.title("🌡️ 지난 110년 동안 정말 더워졌을까?")
+st.write("업로드된 `test.csv` 데이터를 분석하여 기온 변화 추이를 확인합니다.")
+
 try:
     df = load_data()
 
-    # 연도별 평균 기온 계산
-    annual_mean = df.groupby('Year')['평균기온(℃)'].mean()
+    # 2. 연도별 평균 기온 계산
+    annual_temp = df.groupby('연도')['평균기온(℃)'].mean()
 
-    # 추세선 계산 (1차 함수: y = ax + b)
-    # x는 연도, y는 평균기온
-    z = np.polyfit(annual_mean.index, annual_mean.values, 1)
-    p = np.poly1d(z)
+    # 3. 주요 지표 표시 (Metric)
+    st.subheader("📌 주요 데이터 요약")
+    col1, col2, col3 = st.columns(3)
     
-    # 추세선 데이터 생성
-    trend_line = p(annual_mean.index)
-
-    # 시각화를 위한 데이터프레임 생성
-    chart_data = pd.DataFrame({
-        '실제 연평균 기온': annual_mean,
-        '기온 상승 추세선': trend_line
-    })
-
-    # 라인 차트 그리기
-    st.line_chart(chart_data)
-
-    # 분석 결과 텍스트 출력
-    start_year = annual_mean.index.min()
-    end_year = annual_mean.index.max()
-    temp_change = p(end_year) - p(start_year)
-    slope = z[0]
-
-    st.subheader('분석 결과')
-    st.write(f"분석 기간: {start_year}년 ~ {end_year}년")
-    st.write(f"이 기간 동안 추세적으로 기온은 약 {temp_change:.2f}도 상승했습니다.")
+    start_year = int(annual_temp.index.min())
+    end_year = int(annual_temp.index.max())
     
-    if slope > 0:
-        st.success("데이터 분석 결과, 지난 110년 동안 명확한 기온 상승 경향이 확인됩니다.")
+    # 초기 10년 vs 최근 10년 평균 비교
+    start_avg = annual_temp.head(10).mean()
+    end_avg = annual_temp.tail(10).mean()
+    diff = end_avg - start_avg
+
+    col1.metric("분석 시작 연도", f"{start_year}년")
+    col2.metric("최근 데이터 연도", f"{end_year}년")
+    col3.metric("기온 변화 (약 110년)", f"{diff:.2f} ℃", delta=f"{diff:.2f} ℃")
+
+    # 4. 그래프 시각화
+    st.subheader("📈 연도별 평균 기온 변화 추이")
+    # Streamlit 내장 차트 사용 (별도 라이브러리 불필요)
+    st.line_chart(annual_temp)
+
+    # 5. 심층 분석 결과 설명
+    st.divider()
+    st.subheader("🔍 분석 결과 요약")
+    
+    if diff > 0:
+        st.error(f"**상승 확인:** 지난 110여 년간 평균 기온이 약 **{diff:.2f}℃ 상승**했습니다.")
+        st.write(f"- 관측 초기 10년({start_year}~ ) 평균: `{start_avg:.2f}℃` 쪽")
+        st.write(f"- 최근 10년(~ {end_year}) 평균: `{end_avg:.2f}℃` 쪽")
+        st.info("데이터상으로 지구 온난화 혹은 도시화로 인한 기온 상승 추세가 뚜렷하게 나타납니다.")
     else:
-        st.info("데이터 분석 결과, 뚜렷한 기온 상승 경향이 보이지 않습니다.")
+        st.success("기온이 상승하지 않았거나 변화가 미미합니다.")
 
-except FileNotFoundError:
-    st.error("temp.csv 파일을 찾을 수 없습니다. 같은 폴더에 파일을 위치시켜 주세요.")
+    # 6. 원본 데이터 확인
+    with st.expander("데이터 표 확인하기"):
+        st.dataframe(annual_temp)
+
 except Exception as e:
-    st.error(f"오류가 발생했습니다: {e}")
+    st.error(f"데이터를 처리하는 중 오류가 발생했습니다: {e}")
+    st.info("폴더에 'test.csv' 파일이 있는지, 그리고 데이터 형식이 맞는지 확인해주세요.")
